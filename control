@@ -1,0 +1,9 @@
+Package: com.voring.regionshotbridge
+Name: RegionShotBridge
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: URL scheme bridge for RegionShot. Open regionshot://shot to trigger the tweak's default screenshot (reload via regionshot://reload).
+Maintainer: Voring
+Author: Voring
+Section: Utilities
+Depends: firmware (>= 15.0), com.moxuan.regionshot
