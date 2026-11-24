@@ -3,16 +3,19 @@ name: Build
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version without leading "v" (e.g. 1.0.0)'
+        description: 'Release version without the leading "v" (e.g. 1.0.0)'
         required: false
-        default: ''
+        default: ""
 
 permissions:
   contents: write
+
+env:
+  THEOS: ${{ github.workspace }}/theos
 
 jobs:
   build:
@@ -23,44 +26,63 @@ jobs:
 
       - name: Install build dependencies
         run: |
+          set -e
           brew update >/dev/null 2>&1 || true
           brew install ldid xz >/dev/null 2>&1 || brew upgrade ldid xz >/dev/null 2>&1 || true
-          command -v ldid || { echo 'ldid is missing'; exit 1; }
+          command -v ldid
+          command -v xz
 
-      - name: Fetch Theos (roothide fork)
+      - name: Install Theos (roothide fork)
         run: |
-          git clone --recursive --depth=1 https://github.com/roothide/theos.git "$HOME/theos"
-          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          set -e
+          git clone --recursive --depth=1 https://github.com/roothide/theos.git "$THEOS"
+          test -f "$THEOS/makefiles/common.mk"
+          test -d "$THEOS/vendor/mod/roothide"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
-      - name: Fetch iOS SDKs when the fork ships none
+      - name: Install iOS SDK
         run: |
-          if [ ! -d "$THEOS/sdks" ] || [ -z "$(ls -A "$THEOS/sdks" 2>/dev/null)" ]; then
-            git clone --depth=1 https://github.com/theos/sdks.git "$THEOS/sdks"
-          fi
-          ls "$THEOS/sdks" | head -20
+          set -e
+          "$THEOS/bin/install-sdk" 16.5 || "$THEOS/bin/install-sdk" latest
+          ls "$THEOS/sdks"
 
       - name: Resolve SDK
         id: sdk
         run: |
-          if [ -d "$THEOS/sdks/iPhoneOS16.5.sdk" ]; then
-            echo 'value=16.5' >> "$GITHUB_OUTPUT"
-          else
-            echo 'value=latest' >> "$GITHUB_OUTPUT"
+          set -e
+          VER=""
+          for v in 16.5 15.6; do
+            if [ -d "$THEOS/sdks/iPhoneOS$v.sdk" ]; then
+              VER="$v"
+              break
+            fi
+          done
+          if [ -z "$VER" ]; then
+            SDK_PATH="$(ls -d "$THEOS"/sdks/iPhoneOS*.sdk | sort -V | tail -n1)"
+            VER="$(basename "$SDK_PATH" .sdk)"
+            VER="${VER#iPhoneOS}"
           fi
+          echo "Using iOS SDK $VER"
+          echo "value=$VER" >> "$GITHUB_OUTPUT"
 
       - name: Apply release version
-        if: ${{ inputs.version != '' }}
-        run: sed -i '' "s/^Version: .*/Version: ${{ inputs.version }}/" control
+        if: ${{ github.event.inputs.version != '' }}
+        run: |
+          set -e
+          NEW_VERSION="${{ github.event.inputs.version }}"
+          sed -i '' "s/^Version:.*/Version: ${NEW_VERSION}/" control
+          grep "^Version:" control
 
       - name: Build package (roothide)
         run: |
-          make clean || true
-          make package FINALPACKAGE=1 \
-            THEOS_PACKAGE_SCHEME=roothide \
-            TARGET=iphone:clang:${{ steps.sdk.outputs.value }}:15.0
+          set -e
+          make clean >/dev/null 2>&1 || true
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide TARGET=iphone:clang:${{ steps.sdk.outputs.value }}:15.0
+          ls -l packages
 
       - name: Collect artifacts
         run: |
+          set -e
           mkdir -p dist
           cp -v packages/*.deb dist/
           ls -l dist
@@ -73,11 +95,11 @@ jobs:
           if-no-files-found: error
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.deb
-          tag_name: ${{ inputs.version != '' && format('v{0}', inputs.version) || github.ref_name }}
-          name: ${{ inputs.version != '' && format('RegionShotBridge v{0}', inputs.version) || format('RegionShotBridge {0}', github.ref_name) }}
+          tag_name: ${{ github.event.inputs.version != '' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          name: ${{ github.event.inputs.version != '' && format('RegionShotBridge v{0}', github.event.inputs.version) || format('RegionShotBridge {0}', github.ref_name) }}
           generate_release_notes: true
           fail_on_unmatched_files: true
