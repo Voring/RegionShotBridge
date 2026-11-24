@@ -79,6 +79,10 @@ jobs:
           make clean >/dev/null 2>&1 || true
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide TARGET=iphone:clang:${{ steps.sdk.outputs.value }}:15.0
           ls -l packages
+          echo "===== deb contents ====="
+          dpkg-deb -c packages/*.deb || true
+          echo "===== deb control ====="
+          dpkg-deb -I packages/*.deb || true
 
       - name: Collect artifacts
         run: |
@@ -94,7 +98,18 @@ jobs:
           path: dist/*.deb
           if-no-files-found: error
 
-      - name: Publish release
+      - name: Publish rolling release (latest)
+        if: ${{ github.ref == 'refs/heads/main' && github.event.inputs.version == '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.deb
+          tag_name: latest
+          name: Latest build (main)
+          body: ${{ format('Automated roothide build from {0} ({1}).', github.sha, github.event.head_commit.message) }}
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+
+      - name: Publish versioned release
         if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
