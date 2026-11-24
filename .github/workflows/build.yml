@@ -73,6 +73,14 @@ jobs:
           sed -i '' "s/^Version:.*/Version: ${NEW_VERSION}/" control
           grep "^Version:" control
 
+      - name: Normalize maintainer script permissions
+        run: |
+          set -e
+          if [ -d layout/DEBIAN ]; then
+            find layout/DEBIAN -type f ! -name control -exec chmod 0555 {} \;
+            ls -l layout/DEBIAN
+          fi
+
       - name: Build package (roothide)
         run: |
           set -e
